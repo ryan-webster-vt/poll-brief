@@ -1,0 +1,3 @@
+-r src/requirements.txt
+ruff>=0.12,<1
+cfn-lint>=1.40,<2

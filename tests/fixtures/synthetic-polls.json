@@ -1,0 +1,18 @@
+[
+  {
+    "id": "synthetic-generic-001", "pollster": "Example Polling",
+    "subject": "2026", "poll_type": "generic-ballot", "seat_name": "Generic",
+    "created_at": "2026-09-13", "start_date": "2026-09-08", "end_date": "2026-09-10",
+    "sample_size": 1000, "population": "rv",
+    "answers": [{"choice": "Dem", "pct": 47.2}, {"choice": "Rep", "pct": 44.1}],
+    "url": "https://example.com/poll", "sponsors": [], "internal": false, "partisan": null
+  },
+  {
+    "id": "synthetic-approval-002", "pollster": "Example <Survey> & Research",
+    "subject": "Example official", "poll_type": "approval", "seat_name": null,
+    "created_at": null, "start_date": "2026-08-01", "end_date": "2026-08-05",
+    "sample_size": null, "population": "a",
+    "answers": [{"choice": "Approve", "pct": 42}, {"choice": "Disapprove", "pct": 51}],
+    "url": "https://example.com/late-poll?a=1&b=2"
+  }
+]

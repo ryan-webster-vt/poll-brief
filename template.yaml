@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Personal daily VoteHub poll digest
+
+Parameters:
+  Sender:
+    Type: String
+    Description: SES-verified sender email address in this AWS region
+    AllowedPattern: '[^\s@,]+@[^\s@,]+\.[^\s@,]+'
+  Recipient:
+    Type: String
+    Description: One recipient email address (verified while in the SES sandbox)
+    AllowedPattern: '[^\s@,]+@[^\s@,]+\.[^\s@,]+'
+  ScheduleExpression:
+    Type: String
+    Default: 'cron(0 8 * * ? *)'
+  ScheduleTimezone:
+    Type: String
+    Default: America/New_York
+  ScheduleState:
+    Type: String
+    Default: ENABLED
+    AllowedValues: [ENABLED, DISABLED]
+  ApiUrl:
+    Type: String
+    Default: https://api.votehub.com/polls
+    AllowedPattern: 'https://[^?\s#@]+'
+  ApiTokenParameter:
+    Type: String
+    Default: ''
+    Description: Optional existing SSM SecureString path; leave blank for public VoteHub
+    AllowedPattern: '(^$)|(^/[a-zA-Z0-9_./-]+$)'
+  ApiTokenKmsKeyArn:
+    Type: String
+    Default: ''
+    Description: Optional customer-managed KMS key ARN used by that SecureString
+  FirstRunDays:
+    Type: Number
+    Default: 7
+    MinValue: 1
+  FirstRunAll:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+
+Conditions:
+  HasToken: !Not [!Equals [!Ref ApiTokenParameter, '']]
+  HasTokenKey: !And
+    - !Condition HasToken
+    - !Not [!Equals [!Ref ApiTokenKmsKeyArn, '']]
+
+Resources:
+  StateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref StateBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt StateBucket.Arn, !Sub '${StateBucket.Arn}/*']
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DigestResources
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource:
+                  - !Sub '${StateBucket.Arn}/poll-brief/state.json'
+                  - !Sub '${StateBucket.Arn}/poll-brief/lease.json'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt StateBucket.Arn
+              - Effect: Allow
+                Action: ses:SendEmail
+                Resource: !Sub 'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${Sender}'
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Ref Sender
+                  ForAllValues:StringEquals:
+                    ses:Recipients: [!Ref Recipient]
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-digest:log-stream:*'
+              - !If
+                - HasToken
+                - Effect: Allow
+                  Action: ssm:GetParameter
+                  Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ApiTokenParameter}'
+                - !Ref AWS::NoValue
+              - !If
+                - HasTokenKey
+                - Effect: Allow
+                  Action: kms:Decrypt
+                  Resource: !Ref ApiTokenKmsKeyArn
+                  Condition:
+                    StringEquals:
+                      kms:ViaService: !Sub 'ssm.${AWS::Region}.${AWS::URLSuffix}'
+                - !Ref AWS::NoValue
+  DigestLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-digest'
+      RetentionInDays: 14
+  DigestFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: DigestLogGroup
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-digest'
+      CodeUri: src/
+      Handler: poll_brief.app.handler
+      Runtime: python3.13
+      MemorySize: 256
+      Timeout: 180
+      ReservedConcurrentExecutions: 1
+      Role: !GetAtt FunctionRole.Arn
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 1800
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          STATE_BUCKET: !Ref StateBucket
+          SES_SENDER: !Ref Sender
+          SES_RECIPIENT: !Ref Recipient
+          VOTEHUB_API_URL: !Ref ApiUrl
+          API_TOKEN_PARAMETER: !Ref ApiTokenParameter
+          FIRST_RUN_DAYS: !Ref FirstRunDays
+          FIRST_RUN_ALL: !Ref FirstRunAll
+  ScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                aws:SourceArn: !GetAtt ScheduleGroup.Arn
+      Policies:
+        - PolicyName: InvokeDigest
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt DigestFunction.Arn
+  DailySchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      GroupName: !Ref ScheduleGroup
+      ScheduleExpression: !Ref ScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      State: !Ref ScheduleState
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt DigestFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        Input: '{"scheduled_time":"<aws.scheduler.scheduled-time>"}'
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 1800
+          MaximumRetryAttempts: 2
+
+Outputs:
+  FunctionName:
+    Value: !Ref DigestFunction
+  StateBucketName:
+    Value: !Ref StateBucket
+  ScheduleName:
+    Value: !Ref DailySchedule
