@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 from decimal import Decimal
 from html.parser import HTMLParser
 
@@ -29,6 +30,52 @@ def poll(**changes):
 
 
 class NewsletterTests(unittest.TestCase):
+    def test_polls_sort_by_end_date_newest_first_with_undated_last(self):
+        rows = [
+            replace(poll(), identity=str(i), pollster=name, end_date=ended)
+            for i, (name, ended) in enumerate(
+                [
+                    ("Alpha", "2026-08-21"),
+                    ("Zulu", "2026-09-03"),
+                    ("Missing", None),
+                    ("Invalid", "invalid"),
+                    ("Old year", "2025-12-31"),
+                ]
+            )
+        ]
+        for body in render(rows)[1:]:
+            positions = [
+                body.index(name) for name in ("Zulu", "Alpha", "Old year", "Invalid", "Missing")
+            ]
+            self.assertEqual(positions, sorted(positions))
+
+    def test_multicandidate_margin_and_descending_results(self):
+        row = normalize(
+            {
+                "id": "multiple",
+                "poll_type": "us-senator",
+                "answers": [
+                    {"choice": "Sam Runner", "pct": 44},
+                    {"choice": "Pat Third", "pct": 3},
+                    {"choice": "Alex Leader", "pct": 52},
+                ],
+            }
+        )
+        self.assertEqual(row.margin, "Alex Leader +8 points")
+        for body in render([row])[1:]:
+            self.assertIn("Leader +8", body)
+            self.assertLess(body.index("Alex Leader"), body.index("Sam Runner"))
+            self.assertLess(body.index("Sam Runner"), body.index("Pat Third"))
+            self.assertNotIn("percentage points", body)
+            self.assertNotIn("Margin:", body)
+        missing = replace(row, answers=row.answers + (("Unknown result", None),))
+        self.assertIsNone(missing.margin)
+        self.assertGreater(
+            render([missing])[2].index("Unknown result"), render([missing])[2].index("Pat Third")
+        )
+        residual = replace(row, answers=row.answers + (("Undecided", Decimal("1")),))
+        self.assertEqual(residual.margin, "Alex Leader +8 points")
+
     def test_requested_senate_presentation_in_both_bodies(self):
         subject, plain, html = render([poll()])
         for body in (plain, html):
@@ -105,7 +152,7 @@ class NewsletterTests(unittest.TestCase):
         self.assertIn("2024 ELECTION", html)
         self.assertIn("2026 ELECTION", html)
 
-    def test_races_sort_by_office_then_year_then_geography_in_both_bodies(self):
+    def test_races_sort_by_impact_then_year_and_geography_in_both_bodies(self):
         cases = (
             ("2026 TX-12", "us-representative", "Texas 12th · U.S. House"),
             ("2026 Florida", "governor", "Florida · Governor"),
@@ -114,12 +161,16 @@ class NewsletterTests(unittest.TestCase):
             ("2026 Florida", "us-senator", "Florida · U.S. Senate"),
             ("2026 Generic", "generic-ballot", "Generic ballot"),
             ("2026 Ohio", "approval", "Ohio · Approval"),
+            ("2026 Iowa", "us-senator", "Iowa · U.S. Senate"),
+            ("2026 North Carolina", "us-senator", "North Carolina · U.S. Senate"),
+            ("2026 Arizona", "governor", "Arizona · Governor"),
+            ("2026 AZ-01", "us-representative", "Arizona 1st · U.S. House"),
         )
         rows = [
             normalize({"id": str(index), "subject": subject, "poll_type": office})
             for index, (subject, office, _) in enumerate(cases)
         ]
-        expected = [cases[index][2] for index in (4, 2, 3, 1, 0, 5, 6)]
+        expected = [cases[index][2] for index in (5, 7, 8, 9, 10, 1, 4, 2, 6, 0, 3)]
         forward = render(rows)
         reverse = render(list(reversed(rows)))
         self.assertEqual(forward, reverse)
@@ -140,6 +191,11 @@ class NewsletterTests(unittest.TestCase):
                 self.tags.append(tag)
                 if tag == "a":
                     self.links.append(values.get("href"))
+                    if values.get("href") == "https://example.com/poll":
+                        if values.get("target") != "_blank" or "noopener" not in values.get(
+                            "rel", ""
+                        ):
+                            raise AssertionError("Poll source must open safely in a new tab")
                 if tag == "table":
                     self.tables.append(values)
                 self.assert_no_handlers(values)

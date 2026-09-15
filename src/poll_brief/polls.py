@@ -43,12 +43,15 @@ class Poll:
                     else f"{'Dem' if diff > 0 else 'Rep'} +{abs(diff):g} points"
                 )
         if self.poll_type in {"governor", "us-senator", "us-representative"}:
-            # Be conservative: two named choices with percentages, no residual bucket.
+            # Compare named candidates; residual buckets are not candidates.
             residuals = {"other", "undecided", "unsure", "don't know", "someone else"}
-            if len(self.answers) == 2 and all(
-                pct is not None and name.casefold() not in residuals for name, pct in self.answers
-            ):
-                first, second = sorted(self.answers, key=lambda answer: (-answer[1], answer[0]))
+            candidates = [
+                (name, pct)
+                for name, pct in self.answers
+                if name.strip().casefold() not in residuals
+            ]
+            if len(candidates) >= 2 and all(pct is not None for _, pct in candidates):
+                first, second = sorted(candidates, key=lambda answer: (-answer[1], answer[0]))[:2]
                 diff = first[1] - second[1]
                 return "Tie (0 points)" if not diff else f"{first[0]} +{diff:g} points"
         return None

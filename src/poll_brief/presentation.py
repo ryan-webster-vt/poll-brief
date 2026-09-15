@@ -150,7 +150,7 @@ def margin_label(poll):
     if not margin:
         return None
     if margin == "Tie (0 points)":
-        return "Tie · 0 pts"
+        return "Tie"
     name, amount = margin.removesuffix(" points").rsplit(" +", 1)
     if poll.poll_type in ("governor", "us-senator", "us-representative"):
         # Keep full names in result rows; abbreviate only an unambiguous last token.

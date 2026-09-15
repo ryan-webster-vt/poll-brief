@@ -153,7 +153,6 @@ Resources:
       Runtime: python3.13
       MemorySize: 256
       Timeout: 180
-      ReservedConcurrentExecutions: 1
       Role: !GetAtt FunctionRole.Arn
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 1800

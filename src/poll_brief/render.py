@@ -1,11 +1,13 @@
 """Table-based email newsletter with inline CSS and a plain-text equivalent."""
 
 from collections import defaultdict
+from datetime import date
 from html import escape
 from urllib.parse import urlsplit
 
 from .parties import CandidateParties
 from .presentation import field_dates, margin_label, number, race_heading, sample_label
+from .race_priority import race_priority
 
 ATTRIBUTION = "Data: VoteHub, https://votehub.com/polls/api/ (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). Grouping and margins calculated by poll-brief."
 FONT = "font-family:Arial,Helvetica,sans-serif;"
@@ -39,24 +41,29 @@ PARTY_STYLES = {
     ),
 }
 NEUTRAL_STYLE = ("#12625f", "#edf6f5", "#147d78")
+THIRD_PARTY_STYLE = ("#785c00", "#fff8d6", "#d4aa00")
 NEUTRAL_ICON = "🟨"
-RACE_PRIORITY = {
-    "us-senator": 0,
-    "governor": 1,
-    "us-representative": 2,
-    "generic-ballot": 3,
-}
 
 
 def race_sort_key(members):
     poll = members[0]
     heading, year = race_heading(poll)
+    tier, rating = race_priority(poll)
     return (
-        RACE_PRIORITY.get(poll.poll_type, len(RACE_PRIORITY)),
+        tier,
         -int(year) if year else float("inf"),
+        rating,
         heading.casefold(),
         poll.group.casefold(),
     )
+
+
+def poll_sort_key(poll):
+    try:
+        ended = date.fromisoformat(poll.end_date).toordinal() if poll.end_date else 0
+    except ValueError:
+        ended = 0
+    return (-ended, (poll.pollster or "").casefold(), poll.identity)
 
 
 def margin_party(poll, parties):
@@ -89,7 +96,10 @@ def poll_card(poll, parties):
         )
     if poll.answers:
         html.append(f'<table {TABLE} width="100%" style="width:100%;table-layout:fixed;">')
-        for name, pct in poll.answers:
+        for name, pct in sorted(
+            poll.answers,
+            key=lambda answer: (answer[1] is None, -(answer[1] or 0), answer[0].casefold()),
+        ):
             value = f"{number(pct)}%" if pct is not None else ""
             party, party_source = parties.lookup(poll, name)
             plain.append(
@@ -105,7 +115,7 @@ def poll_card(poll, parties):
                 marker_text = (
                     f'<img src="{escape(icon_url, quote=True)}" alt="{label}" width="18" '
                     f'height="18" style="display:inline-block;width:18px;height:18px;'
-                    f'vertical-align:-4px;object-fit:contain;" /> {party}'
+                    'vertical-align:-4px;object-fit:contain;" />'
                 )
                 if party_source:
                     marker = f'<a href="{escape(party_source, quote=True)}" aria-label="{label} party source" style="display:inline-block;margin-right:6px;color:{color};font-size:14px;text-decoration:none;white-space:nowrap;">{marker_text}</a>'
@@ -122,20 +132,24 @@ def poll_card(poll, parties):
         html.append("</table>")
     margin = margin_label(poll)
     if margin:
-        plain.append(f"Margin: {margin} (percentage points)")
+        plain.append(margin)
         party = margin_party(poll, parties)
         color, background, border = (
-            PARTY_STYLES[party][:3] if party in PARTY_STYLES else NEUTRAL_STYLE
+            PARTY_STYLES[party][:3]
+            if party in PARTY_STYLES
+            else THIRD_PARTY_STYLE
+            if party in {"I", "O"}
+            else NEUTRAL_STYLE
         )
         html.append(
             f'<p style="margin:16px 0 0;padding:12px 14px;border-left:3px solid {border};background-color:{background};color:{color};font-size:22px;line-height:28px;font-weight:700;">{escape(margin)}'
-            f'<span style="display:block;font-size:11px;line-height:18px;font-weight:400;color:{color};">Margin · percentage points</span></p>'
+            "</p>"
         )
     url = safe_url(poll.url)
     if url:
         plain.append(f"View poll → {url}")
         html.append(
-            f'<p style="margin:14px 0 0;font-size:13px;line-height:22px;"><a href="{escape(url, quote=True)}" style="display:inline-block;padding:5px 0;color:#476778;text-decoration:underline;">View poll →</a></p>'
+            f'<p style="margin:14px 0 0;font-size:13px;line-height:22px;"><a href="{escape(url, quote=True)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:5px 0;color:#476778;text-decoration:underline;">View poll →</a></p>'
         )
     html.append("</td></tr></table>")
     return "\n".join(plain), "".join(html)
@@ -186,7 +200,7 @@ def render(polls, parties=None):
         html.append(
             f'<h2 style="margin:0;color:#172b3a;font-size:19px;line-height:26px;font-weight:700;">{escape(heading)}</h2></td></tr>'
         )
-        for poll in sorted(members, key=lambda p: (p.pollster or "", p.end_date or "", p.identity)):
+        for poll in sorted(members, key=poll_sort_key):
             text, card = poll_card(poll, parties)
             plain.append(text)
             html.append(f'<tr><td style="padding:0 0 12px;">{card}</td></tr>')

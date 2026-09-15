@@ -142,7 +142,7 @@ class PartyPresentationTests(unittest.TestCase):
                 {"version": 1, "candidates": [row("Ashley Moody", "R"), row("Ashley Moody", "D")]}
             )
 
-    def test_icons_are_text_fallbacks_and_no_script(self):
+    def test_icons_have_alt_text_without_visible_party_letters(self):
         class Checker(HTMLParser):
             tags = set()
 
@@ -153,8 +153,28 @@ class PartyPresentationTests(unittest.TestCase):
         parsed = Checker()
         parsed.feed(html)
         self.assertNotIn("script", parsed.tags)
-        self.assertIn("R</a>", html)
-        self.assertIn("D</a>", html)
+        self.assertNotIn("R</a>", html)
+        self.assertNotIn("D</a>", html)
+        self.assertIn('alt="Republican"', html)
+        self.assertIn('alt="Democrat"', html)
+
+    def test_third_party_lead_is_yellow_and_tie_is_neutral(self):
+        for party in ("I", "O"):
+            parties = CandidateParties({"version": 1, "candidates": [row("Alex Green", party)]})
+            answers = [
+                {"choice": "Sam Blue", "pct": 32},
+                {"choice": "Alex Green", "pct": 41},
+                {"choice": "Pat Red", "pct": 27},
+            ]
+            html = render([sample(answers=answers)], parties)[2]
+            self.assertIn("Green +9", html)
+            self.assertIn("background-color:#fff8d6", html)
+            self.assertIn("🟨", html)
+            answers[0]["pct"] = 41
+            tied = render([sample(answers=answers)], parties)[2]
+            self.assertIn(">Tie</p>", tied)
+            self.assertNotIn("0 pts", tied)
+            self.assertNotIn("background-color:#fff8d6", tied)
 
 
 if __name__ == "__main__":

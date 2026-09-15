@@ -47,12 +47,25 @@ Race headings expand known office and district codes (for example, California
 40th · U.S. House). Full candidate names remain in result rows; an unambiguous
 surname is used in the margin. LV/RV/A retain the API's population classifications.
 Election years remain above the race heading. Unknown labels are preserved.
-Race sections appear in this order: U.S. Senate, governor, U.S. House, generic
-ballot, then other topics. Within each category, newer election years come first,
-followed by geography/name alphabetically. Polls within a race retain their
-existing pollster/date order. The same order is used in HTML and plain text.
+Race sections appear in this order: generic ballot, competitive Senate races,
+competitive governors, competitive House races, then everything else. The
+competitive tiers use Cook Political Report's Toss Up and Lean categories as a
+proxy for importance; Senate promotion is not a tipping-point-seat calculation.
+`src/poll_brief/race_priority.py` holds a manually maintained 2026 snapshot:
+[Senate, August 20](https://www.cookpolitical.com/ratings/senate-race-ratings),
+[governor, September 10](https://www.cookpolitical.com/ratings/governor-race-ratings),
+and [House, September 11](https://www.cookpolitical.com/ratings/house-race-ratings),
+retrieved September 14, 2026. Update that file when ratings change; no ratings
+website is fetched during a digest. Unlisted races and other years fall into
+everything else. Within each tier, newer election years come first, then Toss Up
+before Lean, then geography/name alphabetically. Tied polls display simply `Tie`.
+Polls within a race sort by fieldwork
+end date, newest first; missing or invalid dates come last. Results within each
+poll sort by percentage, highest first, with missing percentages last. The same
+order is used in HTML and plain text. View poll links open a new browser tab.
 
-The layout requires no JavaScript, web fonts, images, or frontend dependencies.
+The layout requires no JavaScript, web fonts, or frontend dependencies. Party
+logos use remote images with accessible alt text.
 An Outlook conditional table supplies the desktop width; cosmetic features such
 as rounded corners can fall back to square borders. Desktop and phone browser
 previews have been checked; delivery in actual email clients has not been tested.
@@ -79,11 +92,12 @@ and full answer name, so a reused surname cannot assign a party in another race.
 Unknown or unmatched names remain unlabeled. Generic-ballot `Dem` and `Rep`
 answers use those API labels directly.
 
-The newsletter shows the configured elephant image with `R` or donkey image
-with `D` beside mapped answers. Unknown and third-party answers use a yellow
-square. It uses red or blue on the existing poll margin when its leading answer
-has a mapped party, and a neutral color for ties or unknown parties. Image alt
-text and the party letter remain readable if a mail client blocks images.
+The newsletter shows the configured elephant or donkey image beside mapped
+answers, without adjacent R/D letters. Plain-text email retains party letters.
+Unknown and third-party answers use a yellow square. Margin highlights use red
+or blue for Republican or Democratic leaders, yellow for mapped independent or
+other-party leaders, and neutral shading for ties or unknown affiliations.
+Image alt text identifies the party when a mail client blocks images.
 These colors report the poll's published answers; they are not a forecast.
 
 ## API contract and selection
@@ -117,9 +131,12 @@ creation/retrieval timestamps are excluded. Changes to those fields can produce 
 new fingerprint. Corrupt data/state causes failure, not an empty digest.
 
 HTML and text group every selected poll by topic/race. Decimal arithmetic supplies
-Dem-versus-Rep generic-ballot margins and two-candidate governor/Senate/House
-margins. Unknown types, residual answers, and approval/favorability omit candidate
-margins. VoteHub attribution and its CC BY 4.0 license accompany each digest.
+Dem-versus-Rep generic-ballot margins and first-minus-second candidate margins
+for governor/Senate/House polls with two or more candidates. Residual answers
+such as Undecided are excluded from that calculation. Missing candidate
+percentages, unknown poll types, and approval/favorability omit candidate margins.
+The margin displays as a compact label such as `Cooper +8`.
+VoteHub attribution and its CC BY 4.0 license accompany each digest.
 
 ## SES setup (run when ready to use AWS)
 

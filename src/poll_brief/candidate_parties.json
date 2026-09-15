@@ -831,6 +831,14 @@
     "party": "R",
     "source": "https://github.com/ElectIndex/26_us_forecast_data/blob/main/races.csv"
   },
+    {
+    "year": "2026",
+    "poll_type": "governor",
+    "race": "Maine · Governor",
+    "name": "Bobby Charles",
+    "party": "R",
+    "source": "https://github.com/ElectIndex/26_us_forecast_data/blob/main/races.csv"
+  },
   {
     "year": "2026",
     "poll_type": "governor",
@@ -6851,7 +6859,7 @@
     "year": "2026",
     "poll_type": "us-representative",
     "race": "Tennessee 9th · U.S. House",
-    "name": "Justin J. Pearson",
+    "name": "Justin Pearson",
     "party": "D",
     "source": "https://github.com/ElectIndex/26_us_forecast_data/blob/main/races.csv"
   },
